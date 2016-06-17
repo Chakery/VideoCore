@@ -536,42 +536,41 @@ namespace videocore { namespace simpleApi {
     uri << (rtmpUrl ? [rtmpUrl UTF8String] : "") << "/" << (streamKey ? [streamKey UTF8String] : "");
     
     m_outputSession.reset(
-                          new videocore::RTMPSession ( uri.str(),
-                                                      [=](videocore::RTMPSession& session,
-                                                          ClientState_t state) {
+        new videocore::RTMPSession ( uri.str(), [=](videocore::RTMPSession& session, ClientState_t state) {
 
-                                                          DLog("ClientState: %d\n", state);
+                                      DLog("ClientState: %d\n", state);
 
-                                                          switch(state) {
+                                      switch(state) {
 
-                                                              case kClientStateConnected:
-                                                                  self.rtmpSessionState = VCSessionStateStarting;
-                                                                  break;
-                                                              case kClientStateSessionStarted:
-                                                              {
+                                          case kClientStateConnected:
+                                              self.rtmpSessionState = VCSessionStateStarting;
+                                              break;
+                                          case kClientStateSessionStarted:
+                                          {
 
-                                                                  __block VCSimpleSession* bSelf = self;
-                                                                  dispatch_async(_graphManagementQueue, ^{
-                                                                      [bSelf addEncodersAndPacketizers];
-                                                                  });
-                                                              }
-                                                                  self.rtmpSessionState = VCSessionStateStarted;
+                                              __block VCSimpleSession* bSelf = self;
+                                              dispatch_async(_graphManagementQueue, ^{
+                                                  [bSelf addEncodersAndPacketizers];
+                                              });
+                                          }
+                                              self.rtmpSessionState = VCSessionStateStarted;
 
-                                                                  break;
-                                                              case kClientStateError:
-                                                                  self.rtmpSessionState = VCSessionStateError;
-                                                                  [self endRtmpSession];
-                                                                  break;
-                                                              case kClientStateNotConnected:
-                                                                  self.rtmpSessionState = VCSessionStateEnded;
-                                                                  [self endRtmpSession];
-                                                                  break;
-                                                              default:
-                                                                  break;
+                                              break;
+                                          case kClientStateError:
+                                              self.rtmpSessionState = VCSessionStateError;
+                                              [self endRtmpSession];
+                                              break;
+                                          case kClientStateNotConnected:
+                                              self.rtmpSessionState = VCSessionStateEnded;
+                                              [self endRtmpSession];
+                                              break;
+                                          default:
+                                              break;
 
-                                                          }
+                                      }
 
-                                                      }) );
+                                  })
+                          );
     VCSimpleSession* bSelf = self;
 
     _bpsCeiling = _bitrate;
@@ -580,61 +579,58 @@ namespace videocore { namespace simpleApi {
         _bitrate = 500000;
     }
 
-    m_outputSession->setBandwidthCallback([=](float vector, float predicted, int inst)
-                                          {
+    m_outputSession->setBandwidthCallback([=](float vector, float predicted, int inst) {
+        
+        bSelf->_estimatedThroughput = predicted;
+        auto video = std::dynamic_pointer_cast<videocore::IEncoder>( bSelf->m_h264Encoder );
+        auto audio = std::dynamic_pointer_cast<videocore::IEncoder>( bSelf->m_aacEncoder );
+        if(video && audio && bSelf.useAdaptiveBitrate) {
 
-                                              bSelf->_estimatedThroughput = predicted;
-                                              auto video = std::dynamic_pointer_cast<videocore::IEncoder>( bSelf->m_h264Encoder );
-                                              auto audio = std::dynamic_pointer_cast<videocore::IEncoder>( bSelf->m_aacEncoder );
-                                              if(video && audio && bSelf.useAdaptiveBitrate) {
+          if ([bSelf.delegate respondsToSelector:@selector(detectedThroughput:)]) {
+              [bSelf.delegate detectedThroughput:predicted];
+          }
+          if ([bSelf.delegate respondsToSelector:@selector(detectedThroughput:videoRate:)]) {
+              [bSelf.delegate detectedThroughput:predicted videoRate:video->bitrate()];
+          }
 
-                                                  if ([bSelf.delegate respondsToSelector:@selector(detectedThroughput:)]) {
-                                                      [bSelf.delegate detectedThroughput:predicted];
-                                                  }
-                                                  if ([bSelf.delegate respondsToSelector:@selector(detectedThroughput:videoRate:)]) {
-                                                      [bSelf.delegate detectedThroughput:predicted videoRate:video->bitrate()];
-                                                  }
+          int videoBr = 0;
 
+          if(vector != 0) {
 
-                                                  int videoBr = 0;
+              vector = vector < 0 ? -1 : 1 ;
 
-                                                  if(vector != 0) {
+              videoBr = video->bitrate();
 
-                                                      vector = vector < 0 ? -1 : 1 ;
+              if (audio) {
 
-                                                      videoBr = video->bitrate();
-
-                                                      if (audio) {
-
-                                                          if ( videoBr > 500000 ) {
-                                                              audio->setBitrate(128000);
-                                                          } else if (videoBr <= 500000 && videoBr > 250000) {
-                                                              audio->setBitrate(96000);
-                                                          } else {
-                                                              audio->setBitrate(80000);
-                                                          }
-                                                      }
+                  if ( videoBr > 500000 ) {
+                      audio->setBitrate(128000);
+                  } else if (videoBr <= 500000 && videoBr > 250000) {
+                      audio->setBitrate(96000);
+                  } else {
+                      audio->setBitrate(80000);
+                  }
+              }
 
 
-                                                      if(videoBr > 1152000) {
-                                                          video->setBitrate(std::min(int((videoBr / 384000 + vector )) * 384000, bSelf->_bpsCeiling) );
-                                                      }
-                                                      else if( videoBr > 512000 ) {
-                                                          video->setBitrate(std::min(int((videoBr / 128000 + vector )) * 128000, bSelf->_bpsCeiling) );
-                                                      }
-                                                      else if( videoBr > 128000 ) {
-                                                          video->setBitrate(std::min(int((videoBr / 64000 + vector )) * 64000, bSelf->_bpsCeiling) );
-                                                      }
-                                                      else {
-                                                          video->setBitrate(std::max(std::min(int((videoBr / 32000 + vector )) * 32000, bSelf->_bpsCeiling), kMinVideoBitrate) );
-                                                      }
-                                                      DLog("\n(%f) AudioBR: %d VideoBR: %d (%f)\n", vector, audio->bitrate(), video->bitrate(), predicted);
-                                                  } /* if(vector != 0) */
+              if(videoBr > 1152000) {
+                  video->setBitrate(std::min(int((videoBr / 384000 + vector )) * 384000, bSelf->_bpsCeiling) );
+              }
+              else if( videoBr > 512000 ) {
+                  video->setBitrate(std::min(int((videoBr / 128000 + vector )) * 128000, bSelf->_bpsCeiling) );
+              }
+              else if( videoBr > 128000 ) {
+                  video->setBitrate(std::min(int((videoBr / 64000 + vector )) * 64000, bSelf->_bpsCeiling) );
+              }
+              else {
+                  video->setBitrate(std::max(std::min(int((videoBr / 32000 + vector )) * 32000, bSelf->_bpsCeiling), kMinVideoBitrate) );
+              }
+              DLog("\n(%f) AudioBR: %d VideoBR: %d (%f)\n", vector, audio->bitrate(), video->bitrate(), predicted);
+          } /* if(vector != 0) */
 
-                                              } /* if(video && audio && m_adaptiveBREnabled) */
-
-
-                                          });
+        } /* if(video && audio && m_adaptiveBREnabled) */
+        
+      });
 
     videocore::RTMPSessionParameters_t sp ( 0. );
 
