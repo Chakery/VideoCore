@@ -659,7 +659,7 @@
 					"$(SRCROOT)",
 					"$(SRCROOT)/videocore/**",
 					"$(SRCROOT)/videocore/Headers/Public/**",
-					"$(SRCROOT)/videocore/boost",
+					"$(SRCROOT)/videocore/boost/**",
 				);
 				INFOPLIST_FILE = VideoCore/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 7.0;
@@ -681,7 +681,7 @@
 					"$(SRCROOT)",
 					"$(SRCROOT)/videocore/**",
 					"$(SRCROOT)/videocore/Headers/Public/**",
-					"$(SRCROOT)/videocore/boost",
+					"$(SRCROOT)/videocore/boost/**",
 				);
 				INFOPLIST_FILE = VideoCore/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 7.0;
